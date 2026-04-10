@@ -1,9 +1,7 @@
 import { NextRequest } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 const EXPORT_PROMPTS: Record<string, string> = {
   full_spec: `You are CADMUS. Generate a complete, comprehensive product specification document from the provided spec content. Include: Executive Summary, Objective, Users, Scope, Data Inputs/Outputs, Logic Rules, Edge Cases, State Management, UX Requirements, Entity Model, and Phase Plan. Format in clean markdown.`,
@@ -12,8 +10,8 @@ const EXPORT_PROMPTS: Record<string, string> = {
   ai_build_prompt: `You are CADMUS. Generate an AI Build Prompt — a detailed, structured prompt that an AI coding assistant (like Claude Code or Cursor) could use to implement this system. Include: Project context, tech stack recommendations, file structure, implementation order, and specific implementation instructions per component. Format clearly for AI consumption.`,
   phase_plan: `You are CADMUS. Generate a Phase Plan from the spec content. Define MVP, Phase 2, Phase 3 with: goals, features included, features deferred, success criteria, and estimated complexity for each phase. Format in clean markdown.`,
   test_cases: `You are CADMUS. Generate comprehensive test cases from the spec content. Include: Unit test cases for business logic, Integration test scenarios, Edge case tests, User acceptance criteria, and Performance test scenarios. Format as a structured test plan in markdown.`,
-  edge_case_checklist: `You are CADMUS. Generate an exhaustive edge case checklist from the spec content. Include: Input validation failures, Network/timeout scenarios, Authentication/authorization edge cases, Data consistency scenarios, Concurrency issues, and System limit scenarios. Format as a structured checklist in markdown.`,
-  deck_outline: `You are CADMUS. Generate a pitch/presentation deck outline from the spec content. Include slide-by-slide breakdown: Problem slide, Solution slide, How it works, Target users, Key features, Technical architecture overview, Competitive differentiation, Phase/roadmap, and Success metrics. Format as a clear slide outline in markdown.`,
+  edge_case_checklist: `You are CADMUS. Generate an exhaustive edge case checklist from the spec content. Include: Input validation failures, Network/timeout scenarios, Data consistency scenarios, Concurrency issues, and System limit scenarios. Format as a structured checklist in markdown.`,
+  deck_outline: `You are CADMUS. Generate a pitch/presentation deck outline from the spec content. Include slide-by-slide breakdown: Problem, Solution, How it works, Target users, Key features, Technical architecture, Competitive differentiation, Roadmap, and Success metrics. Format as a clear slide outline in markdown.`,
 };
 
 export async function POST(req: NextRequest) {
@@ -22,28 +20,24 @@ export async function POST(req: NextRequest) {
 
     if (!exportType || !specContent) {
       return new Response(JSON.stringify({ error: 'exportType and specContent are required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
+        status: 400, headers: { 'Content-Type': 'application/json' },
       });
     }
 
     const systemPrompt = EXPORT_PROMPTS[exportType];
     if (!systemPrompt) {
       return new Response(JSON.stringify({ error: 'Invalid export type' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
+        status: 400, headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    const stream = await anthropic.messages.stream({
-      model: 'claude-3-5-sonnet-20241022',
+    const stream = await openai.chat.completions.create({
+      model: 'gpt-4o',
       max_tokens: 4096,
-      system: systemPrompt,
+      stream: true,
       messages: [
-        {
-          role: 'user',
-          content: `Generate the ${exportType.replace(/_/g, ' ')} from this specification content:\n\n${specContent}`,
-        },
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Generate the ${exportType.replace(/_/g, ' ')} from this specification:\n\n${specContent}` },
       ],
     });
 
@@ -51,28 +45,20 @@ export async function POST(req: NextRequest) {
     const readable = new ReadableStream({
       async start(controller) {
         for await (const chunk of stream) {
-          if (
-            chunk.type === 'content_block_delta' &&
-            chunk.delta.type === 'text_delta'
-          ) {
-            controller.enqueue(encoder.encode(chunk.delta.text));
-          }
+          const text = chunk.choices[0]?.delta?.content || '';
+          if (text) controller.enqueue(encoder.encode(text));
         }
         controller.close();
       },
     });
 
     return new Response(readable, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Transfer-Encoding': 'chunked',
-      },
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Transfer-Encoding': 'chunked' },
     });
   } catch (error) {
     console.error('Export error:', error);
     return new Response(JSON.stringify({ error: 'Failed to generate export' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 }

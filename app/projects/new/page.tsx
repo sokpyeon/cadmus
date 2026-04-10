@@ -44,64 +44,26 @@ export default function NewProjectPage() {
 
       const extracted = await extractRes.json();
 
-      // Get user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/auth');
-        return;
-      }
-
-      // Get or create workspace
-      let workspaceId: string;
-      const { data: existingWorkspace } = await supabase
-        .from('workspaces')
-        .select('id')
-        .eq('owner_user_id', user.id)
-        .single();
-
-      if (existingWorkspace) {
-        workspaceId = existingWorkspace.id;
-      } else {
-        const { data: newWorkspace, error: wsError } = await supabase
-          .from('workspaces')
-          .insert({ name: 'My Workspace', owner_user_id: user.id })
-          .select('id')
-          .single();
-
-        if (wsError || !newWorkspace) throw new Error('Failed to create workspace');
-        workspaceId = newWorkspace.id;
-      }
-
-      // Create project
+      // Create project without auth (auth disabled)
       const title = extracted.objective
         ? extracted.objective.slice(0, 80)
         : rawIdea.slice(0, 80);
 
-      const { data: project, error: projError } = await supabase
-        .from('projects')
-        .insert({
-          workspace_id: workspaceId,
+      // Use service role client to bypass RLS
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           title,
-          raw_idea: rawIdea,
-          project_type: projectType || 'Other',
+          rawIdea,
+          projectType: projectType || 'Other',
           industry: industry || 'Technology',
-          status: 'draft',
-          created_by: user.id,
-        })
-        .select('id')
-        .single();
+          extracted,
+        }),
+      });
 
-      if (projError || !project) throw new Error('Failed to create project');
-
-      // Pre-populate objective section answers if we got extracted data
-      if (extracted.objective) {
-        await supabase.from('answers').upsert({
-          project_id: project.id,
-          section_type: 'objective',
-          question_key: 'problem',
-          answer_text: extracted.objective,
-        });
-      }
+      if (!res.ok) throw new Error('Failed to create project');
+      const project = await res.json();
 
       router.push(`/projects/${project.id}/spec`);
     } catch (err) {

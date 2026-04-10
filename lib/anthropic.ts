@@ -1,8 +1,15 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
-export const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
 });
+
+// Map Anthropic model names to OpenAI equivalents
+function mapModel(model: string): string {
+  if (model.includes('haiku')) return 'gpt-4o-mini';
+  if (model.includes('sonnet')) return 'gpt-4o';
+  return 'gpt-4o-mini';
+}
 
 export async function callClaude(
   model: string,
@@ -10,16 +17,41 @@ export async function callClaude(
   userMessage: string,
   maxTokens = 1024
 ): Promise<string> {
-  const response = await anthropic.messages.create({
-    model,
+  const response = await openai.chat.completions.create({
+    model: mapModel(model),
     max_tokens: maxTokens,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userMessage }],
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ],
   });
 
-  const content = response.content[0];
-  if (content.type === 'text') {
-    return content.text;
-  }
-  throw new Error('Unexpected response type from Claude');
+  return response.choices[0]?.message?.content || '';
+}
+
+export async function streamClaude(
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens = 4096
+): Promise<ReadableStream> {
+  const stream = await openai.chat.completions.create({
+    model: mapModel(model),
+    max_tokens: maxTokens,
+    stream: true,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ],
+  });
+
+  return new ReadableStream({
+    async start(controller) {
+      for await (const chunk of stream) {
+        const text = chunk.choices[0]?.delta?.content || '';
+        if (text) controller.enqueue(new TextEncoder().encode(text));
+      }
+      controller.close();
+    },
+  });
 }

@@ -14,17 +14,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function loadProjects() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('created_by', user.id)
-        .is('archived_at', null)
-        .order('updated_at', { ascending: false });
-
-      setProjects((data as Project[]) || []);
+      const res = await fetch('/api/projects');
+      const data = await res.json();
+      setProjects(Array.isArray(data) ? data : []);
       setLoading(false);
     }
     loadProjects();

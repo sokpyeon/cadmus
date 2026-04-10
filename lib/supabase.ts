@@ -1,31 +1,38 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient, createServerClient } from '@supabase/ssr';
 import { Database } from '@/types/database';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-type SupabaseClient = ReturnType<typeof createClient<Database>>;
-
-// Browser client (singleton)
-let browserClient: SupabaseClient | null = null;
-
-export function getSupabaseBrowserClient(): SupabaseClient {
-  if (!browserClient) {
-    browserClient = createClient<Database>(supabaseUrl, supabaseAnonKey);
-  }
-  return browserClient;
+// Browser client (use in client components)
+export function getSupabaseBrowserClient() {
+  return createBrowserClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 }
 
-// Server client (new instance each call, uses service role)
-export function getSupabaseServerClient(): SupabaseClient {
+// Server client — call only from server components/routes
+// Pass cookieStore from `cookies()` (next/headers)
+export function getSupabaseServerClient(cookieStore?: any) {
+  if (cookieStore) {
+    return createServerClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return cookieStore.getAll(); },
+          setAll(cookiesToSet: any[]) {
+            cookiesToSet.forEach(({ name, value, options }: any) => {
+              cookieStore.set(name, value, options);
+            });
+          },
+        },
+      }
+    );
+  }
+  // Service role client (no cookie session needed)
+  const { createClient } = require('@supabase/supabase-js');
   return createClient<Database>(
-    supabaseUrl,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey,
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    }
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } }
   );
 }
