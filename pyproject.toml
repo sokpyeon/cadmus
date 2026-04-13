@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cadmus-spec"
+version = "1.0.0"
+description = "CADMUS — AI spec engine. Turns vague product ideas into scored, build-ready specifications with PRD, engineering handoff, and AI build prompt exports."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+dependencies = [
+    "openai>=1.0.0",
+]
+
+[project.scripts]
+cadmus = "cadmus.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cadmus"]

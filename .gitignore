@@ -3,3 +3,9 @@ node_modules/
 .vercel/
 *.log
 .env.local
+
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+.env
